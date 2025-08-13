@@ -1,3 +1,4 @@
+# data_handler.py
 """Data fetching and preprocessing functions"""
 
 import numpy as np
@@ -28,11 +29,11 @@ def prepare_data(df, seq_length=SEQ_LENGTH):
     """Prepare data for LSTM training"""
     scaler = StandardScaler()
     df_copy = df.copy()
-    df_copy['Close'] = scaler.fit_transform(df_copy[['Close']])
+    df_copy.loc[:, 'Close'] = scaler.fit_transform(df_copy[['Close']])
     
     data = []
     for i in range(len(df_copy) - seq_length):
-        data.append(df_copy.Close[i:i+seq_length])
+        data.append(df_copy.Close.iloc[i:i+seq_length])
     data = np.array(data)
     
     return data, scaler
@@ -42,9 +43,9 @@ def create_train_test_split(data, train_split=TRAIN_SPLIT):
     """Split data into train and test sets"""
     train_size = int(train_split * len(data))
     
-    X_train = torch.from_numpy(data[:train_size, :-1]).unsqueeze(-1).type(torch.Tensor).to(DEVICE)
-    y_train = torch.from_numpy(data[:train_size, -1]).unsqueeze(-1).type(torch.Tensor).to(DEVICE)
-    X_test = torch.from_numpy(data[train_size:, :-1]).unsqueeze(-1).type(torch.Tensor).to(DEVICE)
-    y_test = torch.from_numpy(data[train_size:, -1]).unsqueeze(-1).type(torch.Tensor).to(DEVICE)
+    X_train = torch.from_numpy(data[:train_size, :-1, :]).type(torch.Tensor).to(DEVICE)
+    y_train = torch.from_numpy(data[:train_size, -1, :]).type(torch.Tensor).to(DEVICE)
+    X_test = torch.from_numpy(data[train_size:, :-1, :]).type(torch.Tensor).to(DEVICE)
+    y_test = torch.from_numpy(data[train_size:, -1, :]).type(torch.Tensor).to(DEVICE)
     
     return X_train, y_train, X_test, y_test

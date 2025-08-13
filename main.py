@@ -1,116 +1,46 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import yfinance as yf
+"""Main execution script for stock prediction"""
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
+from data_handler import get_stock_data, download_recent_data, prepare_data, create_train_test_split
+from model import PredictionModel
+from trainer import train_model, evaluate_model
+from visualizer import plot_initial_data, plot_predictions
+from config import INPUT_DIM, HIDDEN_DIM, NUM_LAYERS, OUTPUT_DIM, DEVICE
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import root_mean_squared_error
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def main():
+    # Get user input
+    ticker = input("Enter the stock ticker symbol (e.g., AAPL, MSFT): ").strip().upper()
+    
+    # Fetch data
+    stock_data = get_stock_data(ticker)
+    if stock_data is None:
+        print("Failed to fetch stock data. Exiting.")
+        return
+    
+    # Download and plot initial data
+    df = download_recent_data(ticker)
+    plot_initial_data(df, ticker)
+    
+    # Prepare data
+    data, scaler = prepare_data(df)
+    X_train, y_train, X_test, y_test = create_train_test_split(data)
+    
+    # Create and train model
+    model = PredictionModel(INPUT_DIM, HIDDEN_DIM, NUM_LAYERS, OUTPUT_DIM).to(DEVICE)
+    model = train_model(model, X_train, y_train)
+    
+    # Evaluate model
+    y_train_pred, y_train_actual, y_test_pred, y_test_actual, train_rmse, test_rmse = evaluate_model(
+        model, X_train, y_train, X_test, y_test, scaler
+    )
+    
+    # Print results
+    print(f"Train RMSE: {train_rmse:.4f}")
+    print(f"Test RMSE: {test_rmse:.4f}")
+    
+    # Plot results
+    plot_predictions(df, ticker, y_test_actual, y_test_pred, test_rmse)
 
-#Ask the user for the stock ticker, and make sure the ticker exists
 
-def get_stock_data(ticker):
-    try:
-        stock_data = yf.download(ticker, start="2010-01-01", end="2023-10-01")
-        if stock_data.empty:
-            raise ValueError("No data found for the ticker.")
-        return stock_data
-    except Exception as e:
-        print(f"Error fetching data for {ticker}: {e}")
-        return None
-
-ticker = input("Enter the stock ticker symbol (e.g., AAPL, MSFT): ").strip().upper()
-stock_data = get_stock_data(ticker)
-
-df = yf.download(ticker, '2020-01-01')
-df.Close.plot(figsize=(12,8))
-scaler = StandardScaler()
-df['Close'] = scaler.fit_transform(df['Close'])
-
-seq_length = 30
-data = []
-
-for i in range(len(df) - seq_length):
-    data.append(df.Close[i:i+seq_length])
-
-data = np.array(data)  
-
-train_size = int(.8 * len(data))
-
-X_train = torch.from_numpy(data[:train_size, :-1, :]).type(torch.Tensor).to(device)
-y_train = torch.from_numpy(data[:train_size, -1, :]).type(torch.Tensor).to(device)
-X_test = torch.from_numpy(data[train_size:, :-1, :]).type(torch.Tensor).to(device)
-y_test = torch.from_numpy(data[train_size:, -1, :]).type(torch.Tensor).to(device)
-
-class PredictionModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers, output_dim):
-        super(PredictionModel, self).__init__()
-        
-        self.num_layers = num_layers
-        self.hidden_dim = hidden_dim
-
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, output_dim)
-
-    def forward(self,x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_dim, device=device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_dim, device=device)
-
-        out, (hn,cn) = self.lstm(x, (h0.detach(), c0.detach()))
-        out = self.fc(out[:, -1, :])
-
-        return out
-
-model = PredictionModel(input_dim = 1, hidden_dim = 32, num_layers = 2, output_dim = 1).to(device)
-
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr = 0.01)
-
-num_epochs = 200
-
-for i in range(num_epochs):
-    y_train_pred = model(X_train)
-
-    loss = criterion(y_train_pred, y_train)
-
-    if i % 25 == 0:
-        print(i,loss.item())
-
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-
-model.eval()
-
-y_test_pred = model(X_test)
-
-y_train_pred = scaler.inverse_transform(y_train_pred.detach().cpu().numpy())
-y_train = scaler.inverse_transform(y_train.detach().cpu().numpy())
-y_test_pred = scaler.inverse_transform(y_test_pred.detach().cpu().numpy())
-y_test = scaler.inverse_transform(y_test.detach().cpu().numpy())
-
-train_rmse = root_mean_squared_error(y_train[:,0],y_train_pred[:,0])
-test_rmse = root_mean_squared_error(y_test[:,0],y_test_pred[:,0])
-fig = plt.figure(figsize=(12,10))
-gs = fig.add_gridspec(4,1)
-ax1 = fig.add_subplot(gs[:3,0])
-ax1.plot(df.iloc[-len(y_test):].index,y_test,color='blue', label = 'Actual Price')
-ax1.plot(df.iloc[-len(y_test):].index,y_test_pred,color='green', label = 'Predicted Price')
-ax1.legend()
-plt.title(f"{ticker} Stock Price Prediction")
-plt.xlabel('Date')
-plt.ylabel('Price')
-ax2 = fig.add_subplot(gs[3,0])
-ax2.axhline(test_rmse, color = 'blue', linestyle='--', label = 'RMSE')
-ax2.plot(df[-len(y_test):].index, abs(y_test - y_test_pred),'r', label = 'Prediction Error')
-ax2.legend()
-plt.title('Prediction Error')
-plt.xlabel('Date')
-plt.ylabel('Error')
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    main()
