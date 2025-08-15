@@ -11,19 +11,6 @@ A deep learning-based stock price prediction tool using Long Short-Term Memory (
 - **Performance Metrics**: Calculates RMSE for both training and testing datasets
 - **GPU Support**: Automatically detects and uses CUDA if available
 
-## Project Structure
-
-```
-stock_predictor/
-├── README.md           # This file
-├── main.py            # Main execution script
-├── config.py          # Configuration parameters
-├── data_handler.py    # Data fetching and preprocessing
-├── model.py           # LSTM model definition
-├── trainer.py         # Training and evaluation functions
-└── visualizer.py      # Plotting and visualization
-```
-
 ## Requirements
 
 ```
